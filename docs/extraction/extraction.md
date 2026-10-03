@@ -24,5 +24,19 @@ The extraction method will be incremental rather than full extraction. Only reco
 The pipeline will be scheduled to run once every 7 days. After extraction, the CSV staging files will be passed to the transformation phase, where the data will be processed to calculate the metrics required by the analytics dashboard, including peak hours, product demand, profit margins, revenue, top-selling products, and attendant performance.
 
 ### 4. Extraction Scope
+The batch data pipeline will extract transaction and inventory-related data from the sale, oil_sale, and restock_log tables in the Supabase PostgreSQL database. The extracted data will provide the information required to generate the analytics dashboard, including peak hours, product demand, profit margins, revenue, top-selling products, and attendant performance.
+
+The main fields included in the extraction are:
+-fuel_id – identifies the fuel product involved in a fuel transaction.
+-pump_id – identifies the pump used for the transaction.
+-attendant_name – identifies the attendant responsible for the transaction.
+-created_at – records the date and time when the transaction or record was created and is used to determine the extraction date range.
+-oil_product_id – identifies the oil product involved in an oil transaction.
+-quantity – records the number of units sold for an oil product.
+-liters_sold – records the amount of fuel sold in liters.
+
+The sale table will primarily provide fuel transaction information, including the fuel product, pump, attendant, transaction timestamp, and liters sold. The oil_sale table will provide oil product sales information, including the oil product, quantity sold, attendant, and transaction timestamp. The restock_log table will provide relevant inventory and restocking information needed for product demand and profit-related analysis.
+
+The extraction will focus on records within the seven-day processing period for each scheduled batch execution. Only the required rows and fields will be extracted rather than retrieving the entire contents of the tables. The extracted data will then be temporarily stored as CSV staging files before being passed to the transformation phase.
 
 ### 5. Source Limitations
