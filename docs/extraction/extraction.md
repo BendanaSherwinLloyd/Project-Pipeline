@@ -26,3 +26,13 @@ The pipeline will be scheduled to run once every 7 days. After extraction, the C
 ### 4. Extraction Scope
 
 ### 5. Source Limitations
+
+The extraction process depends on the availability and consistency of the Supabase PostgreSQL database. The pipeline assumes that the relevant tables, including sale, oil_sale, and restock_log, are accessible and contain complete and properly formatted records during each extraction period.
+
+One limitation is that changes to the database schema may affect the extraction process. Changes to table names, column names, data types, or relationships may require modifications to the extraction queries and Python script. The pipeline also assumes that the required transaction data is available and that the created_at field is properly recorded, as this field is used to determine the seven-day extraction window.
+
+The extraction process also depends on database connectivity and access permissions. If the Supabase database is temporarily unavailable or the pipeline does not have the required credentials or permissions, the scheduled extraction may fail. The pipeline therefore assumes that the database credentials stored in GitHub Actions Secrets remain valid and that the required database access is maintained.
+
+Another limitation is that the accuracy of the analytics depends on the quality and completeness of the source data. Missing, duplicated, or incorrectly entered transaction records may affect the resulting dashboard metrics. The pipeline assumes that transactions and restocking records are properly recorded by the operational system before the scheduled batch execution.
+
+Historical data is also assumed to be available within the database for the required analytical calculations. If historical records are missing or incomplete, the pipeline may have limited ability to generate accurate trends or comparisons for the analytics dashboard.
