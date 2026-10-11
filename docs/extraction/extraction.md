@@ -64,7 +64,6 @@ Historical data is also assumed to be available within the database for the requ
 | total_ammount  | Numeric  | -  | Records the total amount collected for the transaction. |
 | sold_at  | Timestamp  | - | Records the date and time of the transaction. |
 
-
 ### Table: oil_sale
 
 | Column | Data Type | Key | Purpose
@@ -81,3 +80,29 @@ Historical data is also assumed to be available within the database for the requ
 | -------- | -------- | -------- |-------- |
 | id  | int  | Primary Key  | Uniquely identifies each fuel product. |
 | name  | text  | -  | Stores the name of the fuel product. |
+
+### Table: oil_product
+
+| Column | Expected Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| id  | int  | Primary Key  | Uniquely identifies each oil product. |
+| brand  | text  | -  | Identifies the product brand. |
+| name  | text  | -  | Stores the oil product name. |
+| cost  | numeric  | -  | Stores the product cost used in the current cost-based calculations. |
+
+### Table: fuel_sale_batch
+
+| Column | Expected Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| sale_id  | int  | Foreign Key  | Identifies the fuel sale associated with a batch allocation. |
+| batch_id  | int  |  Foreign Key | Identifies the fuel inventory batch used for the sale. |
+| liters_consumed  | numeric  | -  | Records the number of liters taken from the corresponding batch. |
+
+### Table: fuel_batch
+
+| Column | Expected Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| id  | int  | Primary Key  | Uniquely identifies each fuel inventory batch. |
+| fuel_id  | int  |  Foreign Key | Identifies the fuel product associated with the batch. |
+| cost_per_liter  | numeric  | -  | Records the cost per liter for the batch. |
+| liters_initial  | numeric  | -  | Records the initial volume of fuel in the batch. |
