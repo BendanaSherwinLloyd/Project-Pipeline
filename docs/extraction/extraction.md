@@ -28,16 +28,17 @@ The batch data pipeline will extract transaction and inventory-related data from
 
 The main fields included in the extraction are:
 -fuel_id – identifies the fuel product involved in a fuel transaction.
--pump_id – identifies the pump used for the transaction.
+-oil_product_id – identifies the oil product involved in an oil transaction.
 -attendant_name – identifies the attendant responsible for the transaction.
--created_at – records the date and time when the transaction or record was created and is used to determine the extraction date range.
+-sold_at – records the date and time when the transaction occurred and is used to determine the extraction date range.
 -oil_product_id – identifies the oil product involved in an oil transaction.
 -quantity – records the number of units sold for an oil product.
 -liters_sold – records the amount of fuel sold in liters.
+-total_amount – records the total transaction amount and supports revenue and profit-related calculations.
 
-The sale table will primarily provide fuel transaction information, including the fuel product, pump, attendant, transaction timestamp, and liters sold. The oil_sale table will provide oil product sales information, including the oil product, quantity sold, attendant, and transaction timestamp. The restock_log table will provide relevant inventory and restocking information needed for product demand and profit-related analysis.
+The sale table primarily provides fuel transaction information, including the fuel product, transaction timestamp, liters sold, revenue, and attendant details. The oil_sale table provides oil product sales information, including the product identifier, quantity sold, transaction timestamp, revenue, and attendant details. Related product and fuel batch tables provide the additional information required for product identification and cost calculations.
 
-The extraction will focus on records within the seven-day processing period for each scheduled batch execution. Only the required rows and fields will be extracted rather than retrieving the entire contents of the tables. The extracted data will then be temporarily stored as CSV staging files before being passed to the transformation phase.
+The extraction will focus on records within the configured processing period for each scheduled batch execution. Only the required rows and fields will be retrieved rather than extracting the entire database. The extracted data will then be passed to the transformation phase for validation, cleaning, aggregation, and analysis. The resulting analytical outputs will be stored in dedicated tables for reporting and further use.
 
 ### 5. Source Limitations
 
@@ -50,3 +51,33 @@ The extraction process also depends on database connectivity and access permissi
 Another limitation is that the accuracy of the analytics depends on the quality and completeness of the source data. Missing, duplicated, or incorrectly entered transaction records may affect the resulting dashboard metrics. The pipeline assumes that transactions and restocking records are properly recorded by the operational system before the scheduled batch execution.
 
 Historical data is also assumed to be available within the database for the required analytical calculations. If historical records are missing or incomplete, the pipeline may have limited ability to generate accurate trends or comparisons for the analytics dashboard.
+
+# Source Tables and Column Specification
+
+### Table: sale
+
+| Column | Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| fuel_id  | int  | Foreign Key  | Identifies the fuel product sold. |
+| attendant_name  | Text  | -  | Identifies the attendant responsible for the sale. |
+| liters_sold  | Numeric  |  - | Records the volume of fuel sold in liters. |
+| total_ammount  | Numeric  | -  | Records the total amount collected for the transaction. |
+| sold_at  | Timestamp  | - | Records the date and time of the transaction. |
+
+
+### Table: oil_sale
+
+| Column | Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| oil_product_id  | int  | Foreign Key  | Identifies the oil product sold. |
+| quantity  | int  | -  | Records the number of units sold. |
+| total_amount  | int  | -  | Records the total amount collected for the transaction. |
+| attendant_name  | text  | -  | Identifies the attendant responsible for the sale. |
+| sold_at  | int  | timestmap  | Records the date and time of the transaction. |
+
+### Table: fuel
+
+| Column | Data Type | Key | Purpose
+| -------- | -------- | -------- |-------- |
+| id  | int  | Primary Key  | Uniquely identifies each fuel product. |
+| name  | text  | -  | Stores the name of the fuel product. |
