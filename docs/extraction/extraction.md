@@ -132,3 +132,42 @@ The extraction validation stage verifies that the required data has been success
 After completing the validation checks, the pipeline determines whether the extracted data is ready for the Transformation Stage. If all required checks pass, the extracted datasets are accepted for further processing. If a required check fails, the pipeline records the failure and prevents incomplete or unreliable extraction results from being treated as valid input.
 
 The validation stage focuses only on the availability, integrity, and completeness of the extracted data. Tasks such as correcting invalid values, standardizing formats, handling outliers, and performing business calculations are handled during the Transformation Stage.
+
+# Extraction Metadata and Log Specification
+
+The batch data pipeline will maintain extraction metadata and logs to monitor each extraction run and track the data retrieved from the Supabase PostgreSQL database. The metadata will record the pipeline execution identifier, source table, extraction timestamps, record counts, extraction status, validation results, and any errors encountered during data retrieval.
+
+The logs will be maintained in a dedicated logging table in Supabase PostgreSQL. Each extraction run will have a unique run ID, and each source table processed during that run will have its own extraction record. This allows the pipeline to track the results of individual table extractions and determine whether the complete extraction process was successful.
+
+## Extraction Metadata Fields
+
+| Field Name | Purpose | Example Value or Format |
+|---|---|---|
+| run_id | Uniquely identifies a pipeline execution and connects the extraction records belonging to the same run. | RUN-20261017-001 |
+| table_name | Identifies the source table from which the data was extracted. | sale |
+| extraction_start_time | Records the date and time when extraction of a particular table begins. | 2026-10-17T01:00:00+08:00 |
+| extraction_end_time | Records the date and time when extraction of that table finishes. | 2026-10-17T01:00:03+08:00 |
+| extraction_status | Indicates whether the extraction operation completed successfully, failed, or completed with a partial result. | SUCCESS, FAILED, or PARTIAL |
+| records_read | Records the number of rows returned by the source database query. | 250 |
+| records_extracted | Records the number of rows successfully retrieved and made available to the extraction output or staging process. | 250 |
+| records_rejected | Records the number of retrieved rows rejected by extraction-level validation, where applicable. | 0 |
+| extraction_window_start | Identifies the beginning of the date and time range used to retrieve records. | 2026-10-10T00:00:00+08:00 |
+| extraction_window_end | Identifies the end of the date and time range used to retrieve records. | 2026-10-16T23:59:59+08:00 |
+| validation_results | Stores the outcome of extraction checks, including table availability, required columns, identifier checks, uniqueness, and record-count verification. | {"connection":"PASS","columns":"PASS","count_match":"PASS"} |
+| error_code | Stores a code identifying an extraction error, if one occurs. | DB_CONNECTION_ERROR |
+| error_message | Describes the error encountered during extraction. Remains empty when no error occurs. | Database connection timed out. |
+| extraction_duration_seconds | Records the time taken to complete the extraction operation, in seconds. | 3.25 |
+
+*Note:* All example values are illustrative. The exact formats and values will depend on the pipeline implementation. records_read and records_extracted may be equal when all returned records are retrieved successfully. Any difference should be investigated. Rejected records should be counted only when an extraction-level validation rule explicitly excludes them; data-cleaning decisions belong to the Transformation Stage.
+
+## Use of Metadata and Logs
+
+*Monitoring:* The logs allow the pipeline operator to check whether each source table was extracted successfully, how many records were retrieved, and how long each extraction took. They can also help identify changes in extraction volume or unusually long execution times.
+
+*Troubleshooting:* When an extraction fails, the status, error code, error message, and validation results help identify the cause. For example, a missing table or database connection failure can be identified from the corresponding log entry.
+
+*Auditing and Traceability:* Each run ID links the extraction records produced during one pipeline execution. The source table name, extraction window, timestamps, and record counts provide a record of which data was requested and retrieved and when the operation occurred.
+
+*Recovery and Re-execution:* If an extraction fails or returns incomplete results, the logs help identify the affected table and extraction window. The pipeline can retry the failed extraction after the underlying problem is resolved. A failed or incomplete extraction must not be marked as successful simply because other tables were extracted successfully.
+
+The metadata and logs are used strictly to monitor and trace the extraction process. They do not replace the data-validation checks or the data-cleaning and transformation operations performed in later pipeline stages.
