@@ -106,3 +106,29 @@ Historical data is also assumed to be available within the database for the requ
 | fuel_id  | int  |  Foreign Key | Identifies the fuel product associated with the batch. |
 | cost_per_liter  | numeric  | -  | Records the cost per liter for the batch. |
 | liters_initial  | numeric  | -  | Records the initial volume of fuel in the batch. |
+
+### Table: expense
+
+# Extraction Validation Checks
+
+The extraction validation stage verifies that the required data has been successfully retrieved from the Supabase PostgreSQL database before it proceeds to the Transformation Stage. The checks focus on source accessibility, table and column availability, identifier validity, primary key uniqueness, record counts, extraction completeness, and errors during data retrieval.
+
+## Validation Checks
+
+| Check Name | Target | Purpose | Validation Criteria |
+|---|---|---|---|
+| **Source Connection and Accessibility** | Supabase PostgreSQL connection | Ensures that the pipeline can connect to the source database and retrieve data. | **Pass:** The database connection succeeds and the pipeline can execute a test query. **Fail:** Connection errors, authentication failures, or access restrictions prevent retrieval. |
+| **Required Tables Exist** | `sale`, `oil_sale`, `fuel`, `oil_product`, `fuel_sale_batch`, `fuel_batch` | Confirms that all tables required for the planned analytics are available. | **Pass:** Every required table exists and is accessible. **Fail:** A required table is missing or inaccessible. |
+| **Required Columns Exist** | Selected columns in each source table | Ensures that the fields required for extraction are available before the queries execute. | **Pass:** All configured columns exist and can be queried. **Fail:** A required column is missing or causes a query error. |
+| **Required Identifiers Are Present** | Primary and foreign key columns in the extracted records | Ensures that extracted records contain the identifiers needed to distinguish transactions and relate products, sales, and fuel batches. | **Pass:** Required identifier fields are not NULL in the extracted records. **Fail:** A required identifier is missing. Optional fields, such as `attendant_name`, are assessed separately according to their use in the analytics. |
+| **Primary Key Uniqueness** | Primary keys or defined unique identifiers in the extracted tables | Prevents duplicate records from being treated as separate transactions or products. | **Pass:** No duplicate values exist for a table's declared primary key or unique identifier. **Fail:** Duplicate key values are detected. For tables with composite keys, the complete key combination must be checked. |
+| **Record Count Verification** | Source query results and extracted datasets | Confirms that the number of extracted records matches the number of records expected from the source query. | **Pass:** The source query count and the extracted record count match for each table and extraction period. **Fail:** The counts differ without an explained or documented reason. |
+| **Extraction Period Validation** | `sale.sold_at` and `oil_sale.sold_at` | Ensures that sales records fall within the configured extraction period. | **Pass:** All extracted sales records fall within the specified start and end timestamps. **Fail:** Records outside the extraction period are included or expected records within the period are missing. |
+| **Relationship Identifier Validation** | Foreign key fields in `sale`, `oil_sale`, `fuel_sale_batch`, and `fuel_batch` | Checks whether the extracted identifiers can be matched to their corresponding referenced records. | **Pass:** Each non-NULL foreign key in the extracted relationship records matches an existing referenced record. **Fail:** A reference points to a nonexistent record. |
+| **Extraction Error and Interruption Check** | Extraction queries, data retrieval operations, and output files or datasets | Detects incomplete extraction caused by query failures, connection interruptions, or file-writing errors. | **Pass:** All required extraction operations complete successfully, and the extracted datasets are available for the next stage. **Fail:** A required operation fails or produces an incomplete dataset. The affected extraction must be retried or marked as failed before transformation begins. |
+
+## Validation Outcome
+
+After completing the validation checks, the pipeline determines whether the extracted data is ready for the Transformation Stage. If all required checks pass, the extracted datasets are accepted for further processing. If a required check fails, the pipeline records the failure and prevents incomplete or unreliable extraction results from being treated as valid input.
+
+The validation stage focuses only on the availability, integrity, and completeness of the extracted data. Tasks such as correcting invalid values, standardizing formats, handling outliers, and performing business calculations are handled during the Transformation Stage.
