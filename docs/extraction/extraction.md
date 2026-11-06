@@ -1,212 +1,341 @@
-# Data Source and Extraction Specification
+# GAStoKITA Data Extraction Documentation
 
-### 1. Source System
-Name: GAStoKITA: An Integrated Point-of-Sale and Business Intelligence System for U-Fuel Station Operations 
-Purpose: GAStoKITA is a cashier POS system and admin business intelligence system to help improve the operations of the U-Fuel Gas station in Real, Calatagan, Batangas. 
+# 1. Data Source and Extraction Specification
+
+## 1. Source System
+
+**Source system:** GAStoKITA Point-of-Sale and Business Intelligence System for U-Fuel
+
+**Purpose:** GAStoKITA supports fuel station cashier operations and provides operational data used for business analytics. The extraction process retrieves data from the operational database so it can be prepared for analytics in a later pipeline stage.
 
 ### 2. Source Database
 Database Management System: Supabase PostgreSQL
 Source: GAStoKITA Operational Database
 File format: CSV
 
-### 3. Extraction Method
-The GAStoKITA batch data pipeline will use incremental extraction from the Supabase PostgreSQL database. The pipeline will retrieve only the records required to generate and update the analytics dashboard. The dashboard will provide insights on peak operating hours, product demand, profit margins, revenue, top-selling products, and attendant performance.
+## 3. Extraction Method
 
-The pipeline will run every 7 days, each batch execution will extract the relevant transaction records from the previous seven-day period. This allows the pipeline to process recent operational data without repeatedly extracting the entire transaction history. Where historical data is required for comparison or trend analysis, the extraction logic may retrieve the additional records needed by the specific analytical calculation.
+The current extraction method is **full-table extraction**.
 
-Data will be extracted by a Python-based extraction script that connects directly to the Supabase PostgreSQL database. SQL queries will be used to retrieve only the required rows and columns from relevant tables, such as sales, fuel batches, oil sales, expenses, and attendant records. The extracted records will then be temporarily converted into CSV files, which will serve as staging datasets for the transformation phase.
+For every configured source table, the script executes a query equivalent to:
 
-The extraction process will use Python with the PostgreSQL database adapter (psycopg2) to establish the database connection and execute the required SQL queries. The extraction script and batch pipeline will be executed through GitHub Actions, which will provide the scheduled cloud-based execution environment.
-The extraction method will be incremental rather than full extraction. Only records within the defined seven-day extraction window will normally be retrieved, reducing unnecessary database reads and allowing the pipeline to focus on recently completed transactions.
+```sql
+SELECT * FROM table_name;
+```
 
-The extraction method will be incremental rather than full extraction. Only records within the defined seven-day extraction window will normally be retrieved, reducing unnecessary database reads and allowing the pipeline to focus on recently completed transactions.
+The result is loaded into a Pandas DataFrame and exported as a CSV file. The script does not currently apply a date filter, select only a subset of columns, or perform incremental extraction.
 
-The pipeline will be scheduled to run once every 7 days. After extraction, the CSV staging files will be passed to the transformation phase, where the data will be processed to calculate the metrics required by the analytics dashboard, including peak hours, product demand, profit margins, revenue, top-selling products, and attendant performance.
+The extraction process uses the following technologies:
 
-### 4. Extraction Scope
-The batch data pipeline will extract transaction and inventory-related data from the sale, oil_sale, and restock_log tables in the Supabase PostgreSQL database. The extracted data will provide the information required to generate the analytics dashboard, including peak hours, product demand, profit margins, revenue, top-selling products, and attendant performance.
+- Python
+- SQLModel / SQLAlchemy for database connectivity
+- Pandas for loading query results and writing CSV files
+- `python-dotenv` for environment configuration
+- APScheduler for scheduled execution
 
-The main fields included in the extraction are:
--fuel_id – identifies the fuel product involved in a fuel transaction.
--oil_product_id – identifies the oil product involved in an oil transaction.
--attendant_name – identifies the attendant responsible for the transaction.
--sold_at – records the date and time when the transaction occurred and is used to determine the extraction date range.
--oil_product_id – identifies the oil product involved in an oil transaction.
--quantity – records the number of units sold for an oil product.
--liters_sold – records the amount of fuel sold in liters.
--total_amount – records the total transaction amount and supports revenue and profit-related calculations.
+### Extraction Schedule
 
-The sale table primarily provides fuel transaction information, including the fuel product, transaction timestamp, liters sold, revenue, and attendant details. The oil_sale table provides oil product sales information, including the product identifier, quantity sold, transaction timestamp, revenue, and attendant details. Related product and fuel batch tables provide the additional information required for product identification and cost calculations.
+The script configures APScheduler to run the extraction every **Sunday at 12:00 AM**.
 
-The extraction will focus on records within the configured processing period for each scheduled batch execution. Only the required rows and fields will be retrieved rather than extracting the entire database. The extracted data will then be passed to the transformation phase for validation, cleaning, aggregation, and analysis. The resulting analytical outputs will be stored in dedicated tables for reporting and further use.
+The scheduler runs inside the Python process. Therefore, the machine or environment running `extract.py` must remain active and the script must remain running for the scheduled extraction to occur.
 
-### 5. Source Limitations
+## 4. Extraction Scope
 
-The extraction process depends on the availability and consistency of the Supabase PostgreSQL database. The pipeline assumes that the relevant tables, including sale, oil_sale, and restock_log, are accessible and contain complete and properly formatted records during each extraction period.
+The current `SOURCE_TABLES` list contains the following tables:
 
-One limitation is that changes to the database schema may affect the extraction process. Changes to table names, column names, data types, or relationships may require modifications to the extraction queries and Python script. The pipeline also assumes that the required transaction data is available and that the created_at field is properly recorded, as this field is used to determine the seven-day extraction window.
+| Source table | General purpose in the pipeline |
+|---|---|
+| `sale` | Fuel sales transaction records |
+| `oil_sale` | Oil and non-fuel product sales records |
+| `fuel` | Fuel product reference information |
+| `oil_product` | Oil product reference information |
+| `fuel_sale_batch` | Links fuel sales to the inventory batches consumed |
+| `fuel_batch` | Fuel inventory batch information, including cost-related data |
+| `expense` | Operational expense records |
+| `restockLog` | Fuel or inventory restocking records, depending on the source schema |
+| `oil_restock_log` | Oil product restocking records |
 
-The extraction process also depends on database connectivity and access permissions. If the Supabase database is temporarily unavailable or the pipeline does not have the required credentials or permissions, the scheduled extraction may fail. The pipeline therefore assumes that the database credentials stored in GitHub Actions Secrets remain valid and that the required database access is maintained.
+It extracts all columns and all records returned by each source table query. The timestamp fields in `sale` and `oil_sale` are used to report the minimum and maximum timestamps found in the extracted data when those fields are present.
 
-Another limitation is that the accuracy of the analytics depends on the quality and completeness of the source data. Missing, duplicated, or incorrectly entered transaction records may affect the resulting dashboard metrics. The pipeline assumes that transactions and restocking records are properly recorded by the operational system before the scheduled batch execution.
+## 5. Source Limitations and Assumptions
 
-Historical data is also assumed to be available within the database for the required analytical calculations. If historical records are missing or incomplete, the pipeline may have limited ability to generate accurate trends or comparisons for the analytics dashboard.
+The current implementation has the following limitations and assumptions:
+
+1. The configured database URL is valid and has permission to read the listed tables.
+2. Each configured table exists and can be queried.
+3. The extraction uses `SELECT *`, so it retrieves the complete table schema and contents. Changes to source schemas may affect the resulting CSV structure.
+4. No incremental timestamp filtering is applied. Large source tables may therefore take longer to extract and produce larger CSV files.
+5. The extraction process depends on the Python process remaining active for the scheduled run.
+6. The CSV files use fixed names and are overwritten when the script runs again. The output files are not currently separated by run ID.
+7. The script does not currently implement automatic retries, incremental checkpoints, or a separate quarantine location for failed data.
+
+---
 
 # Source Tables and Column Specification
 
-### Table: sale
+The extraction script retrieves every column from each configured table using `SELECT *`. The following tables identify the source entities and the fields relevant to understanding the analytics pipeline. Actual column names and data types are inherited from the source database schema; they are not explicitly projected or converted by the extraction script.
 
-| Column | Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| fuel_id  | int  | Foreign Key  | Identifies the fuel product sold. |
-| attendant_name  | Text  | -  | Identifies the attendant responsible for the sale. |
-| liters_sold  | Numeric  |  - | Records the volume of fuel sold in liters. |
-| total_ammount  | Numeric  | -  | Records the total amount collected for the transaction. |
-| sold_at  | Timestamp  | - | Records the date and time of the transaction. |
+The column examples below describe relevant source data based on the pipeline's intended use. They should be verified against the current Supabase schema. The extraction code itself does not enforce these column definitions.
 
-### Table: oil_sale
+## 1. `sale`
 
-| Column | Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| oil_product_id  | int  | Foreign Key  | Identifies the oil product sold. |
-| quantity  | int  | -  | Records the number of units sold. |
-| total_amount  | int  | -  | Records the total amount collected for the transaction. |
-| attendant_name  | text  | -  | Identifies the attendant responsible for the sale. |
-| sold_at  | int  | timestmap  | Records the date and time of the transaction. |
+| Relevant column | Purpose |
+|---|---|
+| `id` | Identifies a fuel sale record |
+| `fuel_id` | Identifies the fuel product sold |
+| `pump_id` | Identifies the pump associated with the transaction, if present |
+| `attendant_name` | Identifies the attendant associated with the sale, if present |
+| `sold_at` | Records the sale date and time |
+| `liters_sold` | Records the fuel volume sold |
+| `total_amount` | Records the sale amount |
 
-### Table: fuel
+**Reason for inclusion:** Provides fuel transaction information for sales, demand, peak-hour, and attendant-related analysis.
 
-| Column | Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| id  | int  | Primary Key  | Uniquely identifies each fuel product. |
-| name  | text  | -  | Stores the name of the fuel product. |
+## 2. `oil_sale`
 
-### Table: oil_product
+| Relevant column | Purpose |
+|---|---|
+| `id` | Identifies an oil sale record |
+| `oil_product_id` | Identifies the oil product sold |
+| `sold_at` | Records the transaction date and time |
+| `quantity` | Records the quantity sold |
+| `total_amount` | Records the transaction amount |
+| `attendant_name` | Identifies the attendant, if present |
 
-| Column | Expected Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| id  | int  | Primary Key  | Uniquely identifies each oil product. |
-| brand  | text  | -  | Identifies the product brand. |
-| name  | text  | -  | Stores the oil product name. |
-| cost  | numeric  | -  | Stores the product cost used in the current cost-based calculations. |
+**Reason for inclusion:** Provides non-fuel product transaction information for product demand, revenue, and attendant-related analysis.
 
-### Table: fuel_sale_batch
+## 3. `fuel`
 
-| Column | Expected Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| sale_id  | int  | Foreign Key  | Identifies the fuel sale associated with a batch allocation. |
-| batch_id  | int  |  Foreign Key | Identifies the fuel inventory batch used for the sale. |
-| liters_consumed  | numeric  | -  | Records the number of liters taken from the corresponding batch. |
+| Relevant column | Purpose |
+|---|---|
+| `id` | Identifies a fuel product |
+| `name` | Stores the fuel product name |
 
-### Table: fuel_batch
+**Reason for inclusion:** Provides fuel product reference information used to interpret fuel sales.
 
-| Column | Expected Data Type | Key | Purpose
-| -------- | -------- | -------- |-------- |
-| id  | int  | Primary Key  | Uniquely identifies each fuel inventory batch. |
-| fuel_id  | int  |  Foreign Key | Identifies the fuel product associated with the batch. |
-| cost_per_liter  | numeric  | -  | Records the cost per liter for the batch. |
-| liters_initial  | numeric  | -  | Records the initial volume of fuel in the batch. |
+## 4. `oil_product`
 
-### Table: expense
+| Relevant column | Purpose |
+|---|---|
+| `id` | Identifies an oil product |
+| `name` | Stores the product name |
+| `brand` | Stores the product brand, if present |
+| `cost` | Stores product cost information, if present |
 
-# Extraction Validation Checks
+**Reason for inclusion:** Provides product reference and cost information for oil product analysis.
 
-The extraction validation stage verifies that the required data has been successfully retrieved from the Supabase PostgreSQL database before it proceeds to the Transformation Stage. The checks focus on source accessibility, table and column availability, identifier validity, primary key uniqueness, record counts, extraction completeness, and errors during data retrieval.
+## 5. `fuel_sale_batch`
 
-## Validation Checks
+| Relevant column | Purpose |
+|---|---|
+| `sale_id` | Identifies the related fuel sale |
+| `batch_id` | Identifies the fuel batch used |
+| `liters_consumed` | Records the volume consumed from the batch |
 
-| Check Name | Target | Purpose | Validation Criteria |
+**Reason for inclusion:** Connects fuel sales to inventory batches and supports cost-related calculations in later stages.
+
+## 6. `fuel_batch`
+
+| Relevant column | Purpose |
+|---|---|
+| `id` | Identifies a fuel inventory batch |
+| `fuel_id` | Identifies the associated fuel product |
+| `cost_per_liter` | Records the batch cost per liter |
+| `liters_initial` | Records the initial volume in the batch |
+
+**Reason for inclusion:** Provides batch-level fuel cost and inventory information.
+
+## 7. `expense`
+
+The script extracts all columns from `expense`. The exact fields and their data types are inherited from the source schema.
+
+**Reason for inclusion:** Provides operational expense information that may be used in later financial analytics.
+
+## 8. `restockLog`
+
+The script extracts all columns from `restockLog`. The exact fields and their data types are inherited from the source schema.
+
+**Reason for inclusion:** Provides records of inventory restocking activity.
+
+## 9. `oil_restock_log`
+
+The script extracts all columns from `oil_restock_log`. The exact fields and their data types are inherited from the source schema.
+
+**Reason for inclusion:** Provides oil product restocking activity and supports later inventory-related analysis.
+
+---
+
+# Extraction Validation and Data Quality Checks
+
+It performs basic extraction-level checks through successful database querying and CSV writing. It does not yet implement the full set of data-quality checks listed below. The documented checks distinguish between checks currently performed by the code and checks that are recommended for a more complete extraction implementation.
+
+| Check name | Target | Purpose | Current implementation / criteria |
 |---|---|---|---|
-| **Source Connection and Accessibility** | Supabase PostgreSQL connection | Ensures that the pipeline can connect to the source database and retrieve data. | **Pass:** The database connection succeeds and the pipeline can execute a test query. **Fail:** Connection errors, authentication failures, or access restrictions prevent retrieval. |
-| **Required Tables Exist** | `sale`, `oil_sale`, `fuel`, `oil_product`, `fuel_sale_batch`, `fuel_batch` | Confirms that all tables required for the planned analytics are available. | **Pass:** Every required table exists and is accessible. **Fail:** A required table is missing or inaccessible. |
-| **Required Columns Exist** | Selected columns in each source table | Ensures that the fields required for extraction are available before the queries execute. | **Pass:** All configured columns exist and can be queried. **Fail:** A required column is missing or causes a query error. |
-| **Required Identifiers Are Present** | Primary and foreign key columns in the extracted records | Ensures that extracted records contain the identifiers needed to distinguish transactions and relate products, sales, and fuel batches. | **Pass:** Required identifier fields are not NULL in the extracted records. **Fail:** A required identifier is missing. Optional fields, such as `attendant_name`, are assessed separately according to their use in the analytics. |
-| **Primary Key Uniqueness** | Primary keys or defined unique identifiers in the extracted tables | Prevents duplicate records from being treated as separate transactions or products. | **Pass:** No duplicate values exist for a table's declared primary key or unique identifier. **Fail:** Duplicate key values are detected. For tables with composite keys, the complete key combination must be checked. |
-| **Record Count Verification** | Source query results and extracted datasets | Confirms that the number of extracted records matches the number of records expected from the source query. | **Pass:** The source query count and the extracted record count match for each table and extraction period. **Fail:** The counts differ without an explained or documented reason. |
-| **Extraction Period Validation** | `sale.sold_at` and `oil_sale.sold_at` | Ensures that sales records fall within the configured extraction period. | **Pass:** All extracted sales records fall within the specified start and end timestamps. **Fail:** Records outside the extraction period are included or expected records within the period are missing. |
-| **Relationship Identifier Validation** | Foreign key fields in `sale`, `oil_sale`, `fuel_sale_batch`, and `fuel_batch` | Checks whether the extracted identifiers can be matched to their corresponding referenced records. | **Pass:** Each non-NULL foreign key in the extracted relationship records matches an existing referenced record. **Fail:** A reference points to a nonexistent record. |
-| **Extraction Error and Interruption Check** | Extraction queries, data retrieval operations, and output files or datasets | Detects incomplete extraction caused by query failures, connection interruptions, or file-writing errors. | **Pass:** All required extraction operations complete successfully, and the extracted datasets are available for the next stage. **Fail:** A required operation fails or produces an incomplete dataset. The affected extraction must be retried or marked as failed before transformation begins. |
+| Database connection and query execution | Database connection and each source query | Confirms that the database can be accessed and the query can run | **Implemented indirectly.** A query that raises an exception is recorded as `FAILED`; successful query execution continues to CSV output. |
+| Source table accessibility | Every table in `SOURCE_TABLES` | Confirms that each configured table can be queried | **Implemented indirectly.** A missing or inaccessible table raises an exception and is logged as failed. |
+| CSV output creation | CSV file for each source table | Confirms that the query result can be written to staging | **Implemented.** A successful `to_csv` operation results in a `SUCCESS` status. A file-writing exception is recorded as `FAILED`. |
+| Record count tracking | Query result and CSV output | Records how many rows were returned and extracted | **Implemented as count tracking.** `records_read` and `records_extracted` are both set to the DataFrame row count. A separate source-to-file reconciliation check is not performed. |
+| Timestamp range reporting | `sale.sold_at`, `oil_sale.sold_at` | Reports the observed timestamp range in the extracted records | **Implemented when the mapped timestamp column exists and the DataFrame is not empty.** The range is metadata only; it does not validate a configured date window. |
+| Primary key uniqueness | Source table identifiers | Detects duplicate primary keys | **Not implemented.** The current script does not check uniqueness. |
+| Required identifier completeness | Primary and foreign key columns | Detects missing identifiers | **Not implemented.** The current script does not check null identifiers. |
+| Foreign key relationship validation | Sales, products, and batch relationship tables | Detects unmatched references | **Not implemented.** The current script does not compare foreign key values between tables. |
+| Required column validation | Source schemas | Detects missing or changed fields | **Not implemented as a separate check.** A query using `SELECT *` can succeed even if an expected analytics field is absent. |
+| Extraction interruption / error tracking | Query and CSV operations | Records failures during extraction | **Implemented.** Exceptions are captured in the report, the status becomes `FAILED`, and the validation result becomes `FAIL`. |
 
-## Validation Outcome
+### Validation Outcome
 
-After completing the validation checks, the pipeline determines whether the extracted data is ready for the Transformation Stage. If all required checks pass, the extracted datasets are accepted for further processing. If a required check fails, the pipeline records the failure and prevents incomplete or unreliable extraction results from being treated as valid input.
+For each table, the script initially sets the status to `FAILED` and the validation result to `PENDING`. If the query and CSV export complete without raising an exception, the script sets the status to `SUCCESS` and the validation result to `PASS`.
 
-The validation stage focuses only on the availability, integrity, and completeness of the extracted data. Tasks such as correcting invalid values, standardizing formats, handling outliers, and performing business calculations are handled during the Transformation Stage.
+This `PASS` means the current extraction operation completed successfully. It does not mean that the extracted records have passed uniqueness, completeness, relationship, or business-rule validation.
 
-# Extraction Metadata and Log Specification
+The current script processes the configured tables one at a time. A failure for one table is recorded, and the loop continues to the next configured table.
 
-The batch data pipeline will maintain extraction metadata and logs to monitor each extraction run and track the data retrieved from the Supabase PostgreSQL database. The metadata will record the pipeline execution identifier, source table, extraction timestamps, record counts, extraction status, validation results, and any errors encountered during data retrieval.
+Data cleaning, standardization, and business calculations are outside the scope of this extraction stage.
 
-The logs will be maintained in a dedicated logging table in Supabase PostgreSQL. Each extraction run will have a unique run ID, and each source table processed during that run will have its own extraction record. This allows the pipeline to track the results of individual table extractions and determine whether the complete extraction process was successful.
-
-## Extraction Metadata Fields
-
-| Field Name | Purpose | Example Value or Format |
-|---|---|---|
-| run_id | Uniquely identifies a pipeline execution and connects the extraction records belonging to the same run. | RUN-20261017-001 |
-| table_name | Identifies the source table from which the data was extracted. | sale |
-| extraction_start_time | Records the date and time when extraction of a particular table begins. | 2026-10-17T01:00:00+08:00 |
-| extraction_end_time | Records the date and time when extraction of that table finishes. | 2026-10-17T01:00:03+08:00 |
-| extraction_status | Indicates whether the extraction operation completed successfully, failed, or completed with a partial result. | SUCCESS, FAILED, or PARTIAL |
-| records_read | Records the number of rows returned by the source database query. | 250 |
-| records_extracted | Records the number of rows successfully retrieved and made available to the extraction output or staging process. | 250 |
-| records_rejected | Records the number of retrieved rows rejected by extraction-level validation, where applicable. | 0 |
-| extraction_window_start | Identifies the beginning of the date and time range used to retrieve records. | 2026-10-10T00:00:00+08:00 |
-| extraction_window_end | Identifies the end of the date and time range used to retrieve records. | 2026-10-16T23:59:59+08:00 |
-| validation_results | Stores the outcome of extraction checks, including table availability, required columns, identifier checks, uniqueness, and record-count verification. | {"connection":"PASS","columns":"PASS","count_match":"PASS"} |
-| error_code | Stores a code identifying an extraction error, if one occurs. | DB_CONNECTION_ERROR |
-| error_message | Describes the error encountered during extraction. Remains empty when no error occurs. | Database connection timed out. |
-| extraction_duration_seconds | Records the time taken to complete the extraction operation, in seconds. | 3.25 |
-
-*Note:* All example values are illustrative. The exact formats and values will depend on the pipeline implementation. records_read and records_extracted may be equal when all returned records are retrieved successfully. Any difference should be investigated. Rejected records should be counted only when an extraction-level validation rule explicitly excludes them; data-cleaning decisions belong to the Transformation Stage.
-
-## Use of Metadata and Logs
-
-*Monitoring:* The logs allow the pipeline operator to check whether each source table was extracted successfully, how many records were retrieved, and how long each extraction took. They can also help identify changes in extraction volume or unusually long execution times.
-
-*Troubleshooting:* When an extraction fails, the status, error code, error message, and validation results help identify the cause. For example, a missing table or database connection failure can be identified from the corresponding log entry.
-
-*Auditing and Traceability:* Each run ID links the extraction records produced during one pipeline execution. The source table name, extraction window, timestamps, and record counts provide a record of which data was requested and retrieved and when the operation occurred.
-
-*Recovery and Re-execution:* If an extraction fails or returns incomplete results, the logs help identify the affected table and extraction window. The pipeline can retry the failed extraction after the underlying problem is resolved. A failed or incomplete extraction must not be marked as successful simply because other tables were extracted successfully.
-
-The metadata and logs are used strictly to monitor and trace the extraction process. They do not replace the data-validation checks or the data-cleaning and transformation operations performed in later pipeline stages.
+---
 
 # Extraction Metadata and Log Specification
 
-The batch data pipeline will maintain extraction metadata and logs to monitor each extraction run and track the data retrieved from the Supabase PostgreSQL database. The metadata will record the pipeline execution identifier, source table, extraction timestamps, record counts, extraction status, validation results, and any errors encountered during data retrieval.
+The extraction script creates one run ID for each execution of `extract_to_csv()` and records one audit entry for each configured source table.
 
-The logs will be maintained in a dedicated logging table in Supabase PostgreSQL. Each extraction run will have a unique run ID, and each source table processed during that run will have its own extraction record. This allows the pipeline to track the results of individual table extractions and determine whether the complete extraction process was successful.
+The audit entries are appended to the local file:
 
-## Extraction Metadata Fields
+```text
+logs/extraction.log
+```
 
-| Field Name | Purpose | Example Value or Format |
+The log directory is created automatically if it does not exist.
+
+## 1. Metadata Fields
+
+| Field | Purpose | Example / format |
 |---|---|---|
-| run_id | Uniquely identifies a pipeline execution and connects the extraction records belonging to the same run. | RUN-20261017-001 |
-| table_name | Identifies the source table from which the data was extracted. | sale |
-| extraction_start_time | Records the date and time when extraction of a particular table begins. | 2026-10-17T01:00:00+08:00 |
-| extraction_end_time | Records the date and time when extraction of that table finishes. | 2026-10-17T01:00:03+08:00 |
-| extraction_status | Indicates whether the extraction operation completed successfully, failed, or completed with a partial result. | SUCCESS, FAILED, or PARTIAL |
-| records_read | Records the number of rows returned by the source database query. | 250 |
-| records_extracted | Records the number of rows successfully retrieved and made available to the extraction output or staging process. | 250 |
-| records_rejected | Records the number of retrieved rows rejected by extraction-level validation, where applicable. | 0 |
-| extraction_window_start | Identifies the beginning of the date and time range used to retrieve records. | 2026-10-10T00:00:00+08:00 |
-| extraction_window_end | Identifies the end of the date and time range used to retrieve records. | 2026-10-16T23:59:59+08:00 |
-| validation_results | Stores the outcome of extraction checks, including table availability, required columns, identifier checks, uniqueness, and record-count verification. | {"connection":"PASS","columns":"PASS","count_match":"PASS"} |
-| error_code | Stores a code identifying an extraction error, if one occurs. | DB_CONNECTION_ERROR |
-| error_message | Describes the error encountered during extraction. Remains empty when no error occurs. | Database connection timed out. |
-| extraction_duration_seconds | Records the time taken to complete the extraction operation, in seconds. | 3.25 |
+| `run_id` | Identifies the extraction execution | `RUN-A1B2C3D4` |
+| `table_name` | Identifies the source table being extracted | `sale` |
+| `start_time` | Records when extraction of the table begins | UTC ISO 8601 timestamp |
+| `end_time` | Records when extraction of the table finishes | UTC ISO 8601 timestamp |
+| `status` | Indicates whether the table extraction succeeded or failed | `SUCCESS` / `FAILED` |
+| `records_read` | Number of rows returned by the query | Integer |
+| `records_extracted` | Number of rows written to the CSV output | Integer |
+| `records_rejected` | Number of rows rejected during extraction | `0` in the current implementation |
+| `extraction_window` | Reports the observed timestamp range or indicates a full-table extraction | Timestamp range or `FULL_TABLE_DUMP` |
+| `validation_results` | Records the basic extraction outcome | `PASS` / `FAIL` / `PENDING` |
+| `error_message` | Stores the exception text when an extraction fails | Error text or `None` |
+| `duration_seconds` | Records the time taken for the table extraction | Decimal seconds |
 
-*Note:* All example values are illustrative. The exact formats and values will depend on the pipeline implementation. records_read and records_extracted may be equal when all returned records are retrieved successfully. Any difference should be investigated. Rejected records should be counted only when an extraction-level validation rule explicitly excludes them; data-cleaning decisions belong to the Transformation Stage.
+The timestamps used for the start and end times are generated in UTC. The `extraction_window` field is not a configured start/end filter. It reports the minimum and maximum timestamps found for mapped timestamp fields; otherwise, it reports `FULL_TABLE_DUMP`.
 
-## Use of Metadata and Logs
+## 2. Use of Metadata and Logs
 
-*Monitoring:* The logs allow the pipeline operator to check whether each source table was extracted successfully, how many records were retrieved, and how long each extraction took. They can also help identify changes in extraction volume or unusually long execution times.
+The local audit log supports:
 
-*Troubleshooting:* When an extraction fails, the status, error code, error message, and validation results help identify the cause. For example, a missing table or database connection failure can be identified from the corresponding log entry.
+- **Monitoring:** Reviewing which tables completed and how many rows were extracted.
+- **Troubleshooting:** Reviewing the exception message for a failed table.
+- **Auditing:** Identifying the run and table associated with an extraction result.
+- **Performance review:** Comparing the recorded extraction durations.
 
-*Auditing and Traceability:* Each run ID links the extraction records produced during one pipeline execution. The source table name, extraction window, timestamps, and record counts provide a record of which data was requested and retrieved and when the operation occurred.
+The log is currently a text file on the machine running the extraction script. The script does not currently write extraction logs to a Supabase logging table.
 
-*Recovery and Re-execution:* If an extraction fails or returns incomplete results, the logs help identify the affected table and extraction window. The pipeline can retry the failed extraction after the underlying problem is resolved. A failed or incomplete extraction must not be marked as successful simply because other tables were extracted successfully.
+---
 
-The metadata and logs are used strictly to monitor and trace the extraction process. They do not replace the data-validation checks or the data-cleaning and transformation operations performed in later pipeline stages.
+# Log Retention and Access
+
+| Requirement | Current specification |
+|---|---|
+| Log storage location | Local `logs/extraction.log` file |
+| Retention period | No automatic retention or deletion policy is implemented in the current script |
+| Access | Access is controlled by permissions on the machine and directory where the script runs |
+| Archiving | Not implemented |
+| Deletion | Logs are appended to the file; the script does not automatically delete old entries |
+
+The log file should be retained while it is needed for monitoring, troubleshooting, or auditing. A retention period and archiving process may be defined when the extraction service is deployed in its intended environment.
+
+The current code does not implement automatic log rotation or deletion.
+
+---
+
+# Extraction Data Contract and Naming Convention
+
+## 1. Output Structure
+
+The extraction output consists of one CSV file per configured source table. The CSV file contains the columns returned by the source table's `SELECT *` query.
+
+| Source table | Output file |
+|---|---|
+| `sale` | `raw_data/sale.csv` |
+| `oil_sale` | `raw_data/oil_sale.csv` |
+| `fuel` | `raw_data/fuel.csv` |
+| `oil_product` | `raw_data/oil_product.csv` |
+| `fuel_sale_batch` | `raw_data/fuel_sale_batch.csv` |
+| `fuel_batch` | `raw_data/fuel_batch.csv` |
+| `expense` | `raw_data/expense.csv` |
+| `restockLog` | `raw_data/restockLog.csv` |
+| `oil_restock_log` | `raw_data/oil_restock_log.csv` |
+
+The output directory is `raw_data`. It is created automatically if it does not exist.
+
+## 2. Naming Convention
+
+- Output files use the source table name with the `.csv` extension.
+- Source column names are preserved as returned by the database.
+- The current extraction script does not rename columns or convert source data types.
+- Each extraction run writes to the same table-specific file path. A subsequent run overwrites the previous CSV file for that table.
+- The run ID is recorded in the audit log but is not currently included in the CSV filename.
+
+## 3. Schema Consistency
+
+Because the extraction uses `SELECT *`, the output schema follows the current source table schema. If a source column is added, removed, or renamed, the CSV structure may change.
+
+The current script does not compare the source schema against a predefined data contract. Unexpected schema changes should therefore be identified during review or in a later validation enhancement before the data is used for transformation.
+
+No source-to-standardized column mapping is applied during extraction. Standardization and field mapping belong to the Transformation Stage unless explicitly required by the extraction process.
+
+---
+
+# Extraction Acceptance and Handover Rules
+
+The current script records the extraction outcome for each source table. The following rules describe how the current output should be interpreted before it is handed to the Transformation Stage.
+
+| Condition | Acceptance decision | Pipeline action |
+|---|---|---|
+| A table query succeeds and its CSV file is written | Extraction `SUCCESS` | The table's CSV file is available in `raw_data` for review and possible handover. |
+| A table query fails | Extraction `FAILED` | The exception is recorded in the audit log. The script continues to the next table. The failed table must be re-extracted after the issue is resolved. |
+| CSV writing fails | Extraction `FAILED` | The exception is recorded in the audit log. The affected output must be checked before it is used. |
+| All configured tables complete successfully | All table extractions report `SUCCESS` | The extraction output may be handed to the Transformation Stage, subject to review of the run log. |
+| One or more tables fail | Partial extraction run | Do not treat the full set of output files as a complete extraction package. Review the log and re-run the affected extraction after resolving the problem. |
+
+### Handover Package
+
+The extraction stage produces:
+
+1. CSV files in the `raw_data` directory.
+2. The local audit log in `logs/extraction.log`.
+3. Per-table extraction status, record counts, timestamp range information when available, duration, and error information.
+
+The current script does not implement automatic retries, quarantine handling, or a centralized overall approval status. These are not represented as implemented features in this documentation.
+
+---
+
+# Common Extraction Problems and Mitigation
+
+| Problem | Possible cause | Impact on extraction | Mitigation |
+|---|---|---|---|
+| Database connection failure | Incorrect `DATABASE_URL`, unavailable database, network issue, or invalid credentials | The affected table cannot be extracted | Verify the environment variable, database availability, and credentials, then run the extraction again. |
+| Source table not found | Table name mismatch or schema change | The query fails for the affected table | Confirm the exact table name in PostgreSQL and update `SOURCE_TABLES` if necessary. |
+| Permission denied | Database role lacks read access to a source table | The affected table cannot be retrieved | Confirm that the database role has the required read permissions. |
+| Source schema changes | A table's columns or types are modified | CSV structure may differ from what downstream processing expects | Review the source schema and update the pipeline or transformation mapping as required. |
+| Large table extraction | Full-table extraction retrieves all available rows | Longer execution time and larger CSV files | Monitor file sizes and execution duration. Consider incremental extraction only after implementing and documenting the required timestamp filtering logic. |
+| CSV output failure | Directory permissions, disk space, or interrupted file writing | A table's output may be missing or incomplete | Check the output directory, available disk space, and the recorded error; then rerun the extraction. |
+| Scheduled run does not occur | The Python process or host is not running at the scheduled time | The weekly extraction is missed | Keep the host and extraction process running, or use an appropriate persistent scheduler environment. |
+| Timestamp metadata is unavailable | A mapped timestamp column is absent or the table has no rows | The log reports `FULL_TABLE_DUMP` instead of a timestamp range | Confirm the source schema and mapping. The current metadata does not apply a date filter. |
+| Timestamp mapping mismatch for expenses | `SOURCE_TABLES` contains `expense`, while `TIMESTAMP_COLUMNS` contains `expenses` | The `expense` table does not receive timestamp-range reporting from the current mapping | Align the mapping key with the actual table name after confirming the timestamp column in the source schema. |
+
+---
+
+## Summary
+
+The current GAStoKITA extraction implementation performs full-table extraction from the configured PostgreSQL source tables. It writes each table's results to a CSV file in `raw_data` and appends a per-table audit report to `logs/extraction.log`.
+
+The script schedules extraction every Sunday at 12:00 AM through APScheduler. A successful extraction status indicates that the query and CSV export completed without an exception. More advanced checks—such as primary key uniqueness, required-field completeness, foreign-key validation, and source-to-output count reconciliation—are not currently implemented.
+
+The CSV files and audit log form the output of the Extraction Stage and provide the inputs and traceability information for the Transformation Stage.
