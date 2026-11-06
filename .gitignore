@@ -4,4 +4,3 @@ logs/
 pipeline/template.py
 transformed/
 analytics_output/
-docs/
